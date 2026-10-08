@@ -13,12 +13,15 @@
   No external libraries needed. Both axes step at the same time
   (non-blocking), so diagonal moves work.
 
+  Travel is limited to +/-X_LIMIT_STEPS and +/-Y_LIMIT_STEPS from the
+  start position so the wires can't get tangled.
+
   Serial commands (115200 baud, end each line with newline):
-    X<steps>        move X relative,   e.g.  X200   X-150
-    Y<steps>        move Y relative,   e.g.  Y50    Y-300
-    M<x> <y>        move both relative at the same time, e.g. M100 -40
+    X<steps>        move X relative,   e.g.  X20    X-15
+    Y<steps>        move Y relative,   e.g.  Y10    Y-30
+    M<x> <y>        move both relative at the same time, e.g. M20 -10
     G<x> <y>        go to absolute position,               e.g. G0 0
-    S<steps/sec>    set speed for both axes,               e.g. S800
+    S<steps/sec>    set speed for both axes,               e.g. S100
     Z               set current position as zero (0,0)
     P               print current position
     STOP            stop both motors immediately
@@ -32,8 +35,16 @@ const uint8_t Y_DIR_PIN = 11;  // Y axis D+ (direction)
 
 // ---------------- Settings ----------------
 const unsigned int PULSE_WIDTH_US  = 5;     // step pulse high time (>= 2.5us for TB6600)
-const float        DEFAULT_SPEED   = 800.0; // steps per second
-const float        MAX_SPEED       = 5000.0;
+const float        DEFAULT_SPEED   = 100.0; // steps per second (kept slow for testing)
+const float        MAX_SPEED       = 1000.0;
+
+// Soft travel limits so the motors can't wind up the wires.
+// Each axis may only move between -LIMIT and +LIMIT steps from where it was
+// at power-up (or at the last Z command). On a 1.8 deg motor at full step,
+// 50 steps = 1/4 turn; with microstepping it is even less. Raise these once
+// the wiring is sorted.
+const long         X_LIMIT_STEPS   = 50;
+const long         Y_LIMIT_STEPS   = 50;
 const bool         X_INVERT_DIR    = false; // flip if X turns the wrong way
 const bool         Y_INVERT_DIR    = false; // flip if Y turns the wrong way
 
@@ -90,6 +101,14 @@ bool isMoving() {
 // Start a move to absolute targets. The longer axis runs at full speed and the
 // shorter one is slowed down so both axes finish together (straight-line move).
 void moveTo(long xTarget, long yTarget) {
+  long xc = constrain(xTarget, -X_LIMIT_STEPS, X_LIMIT_STEPS);
+  long yc = constrain(yTarget, -Y_LIMIT_STEPS, Y_LIMIT_STEPS);
+  if (xc != xTarget || yc != yTarget) {
+    Serial.println(F("Limit reached - move clipped"));
+  }
+  xTarget = xc;
+  yTarget = yc;
+
   long dx = labs(xTarget - xAxis.position);
   long dy = labs(yTarget - yAxis.position);
   long longest = max(dx, dy);
